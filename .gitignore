@@ -1,3 +1,7 @@
+# App specific json cofig files
+*.jsn
+*.JSN
+
 # Built application files
 *.apk
 *.ap_
@@ -25,3 +29,6 @@ proguard/
 
 # Log Files
 *.log
+
+# Mac scpecific files
+.DS_Store
