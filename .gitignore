@@ -21,6 +21,11 @@ gen/
 build/
 /*/build/
 
+# Idea files
+/local.properties
+/.idea/workspace.xml
+/.idea/libraries
+
 # Local configuration file (sdk path, etc)
 local.properties
 

@@ -26,6 +26,8 @@ import android.widget.Button;
 import android.widget.EditText;
 import android.widget.TextView;
 
+import com.kii.cloud.storage.Kii;
+
 import java.util.ArrayList;
 import java.util.List;
 
@@ -84,6 +86,11 @@ public class LoginActivity extends Activity implements LoaderCallbacks<Cursor> {
 
         mLoginFormView = findViewById(R.id.login_form);
         mProgressView = findViewById(R.id.login_progress);
+
+        // Configures the Kii SDK to use the specified Application ID and Key.
+        // It must be called prior to any API calls.
+        // It is ok to call this method multiple times
+        //TODO Kii.initialize(getApplicationContext(), "___APPID___", "___APPKEY___", Kii.Site.US);
     }
 
     private void populateAutoComplete() {
