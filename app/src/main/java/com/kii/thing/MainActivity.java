@@ -23,6 +23,10 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.TextView;
 
+import com.kii.cloud.storage.Kii;
+import com.kii.cloud.storage.KiiUser;
+import com.kii.thing.helpers.Preferences;
+
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -77,6 +81,15 @@ public class MainActivity extends ActionBarActivity {
 
         //noinspection SimplifiableIfStatement
         if (id == R.id.action_settings) {
+            return true;
+        }
+
+        if (id == R.id.action_logout) {
+            if(KiiUser.getCurrentUser() != null) {
+                KiiUser.logOut();
+                Preferences.clearStoredAccessToken(this);
+            }
+            finish();
             return true;
         }
 

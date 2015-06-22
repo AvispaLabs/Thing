@@ -4,138 +4,149 @@ import android.animation.Animator;
 import android.animation.AnimatorListenerAdapter;
 import android.annotation.TargetApi;
 import android.app.Activity;
-import android.app.LoaderManager.LoaderCallbacks;
-import android.content.ContentResolver;
-import android.content.CursorLoader;
-import android.content.Loader;
-import android.database.Cursor;
-import android.net.Uri;
+import android.content.Context;
+import android.content.Intent;
 import android.os.AsyncTask;
-
 import android.os.Build;
 import android.os.Bundle;
-import android.provider.ContactsContract;
 import android.text.TextUtils;
-import android.view.KeyEvent;
+import android.util.Log;
 import android.view.View;
 import android.view.View.OnClickListener;
-import android.view.inputmethod.EditorInfo;
-import android.widget.ArrayAdapter;
-import android.widget.AutoCompleteTextView;
 import android.widget.Button;
+import android.widget.CheckBox;
 import android.widget.EditText;
-import android.widget.TextView;
-
+import com.kii.thing.R;
+import com.kii.thing.helpers.Constants;
+import com.kii.thing.helpers.Preferences;
 import com.kii.cloud.storage.Kii;
-
-import java.util.ArrayList;
-import java.util.List;
+import com.kii.cloud.storage.KiiUser;
 
 
 /**
- * A login screen that offers login via email/password.
- */
-public class LoginActivity extends Activity implements LoaderCallbacks<Cursor> {
+ * A login screen that offers login via 4 digit pin.
 
-    /**
-     * A dummy authentication store containing known user names and passwords.
-     * TODO: remove after connecting to a real authentication system.
-     */
-    private static final String[] DUMMY_CREDENTIALS = new String[]{
-            "foo@example.com:hello", "bar@example.com:world"
-    };
+ */
+public class LoginActivity extends Activity {
+
+    private static final String TAG = LoginActivity.class.getName();
+
     /**
      * Keep track of the login task to ensure we can cancel it if requested.
      */
-    private UserLoginTask mAuthTask = null;
+    private UserSignInTask mSignInTask = null;
+    private UserRegistrationTask mRegisterTask = null;
+    private UserTokenSignInTask mTokenSignInTask = null;
 
     // UI references.
-    private AutoCompleteTextView mEmailView;
+    private EditText mUsernameView;
     private EditText mPasswordView;
+    private CheckBox mRememberCheckbox;
+    private boolean rememberMe = false;
     private View mProgressView;
-    private View mLoginFormView;
+    private View mAuthFormView;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_login);
 
-        // Set up the login form.
-        mEmailView = (AutoCompleteTextView) findViewById(R.id.email);
-        populateAutoComplete();
+        /**
+         * Initialize Kii SDK
+         * Please change APP_ID/APP_KEY to your application on class Constants
+         * This method does not talk to the server so it can be done on a UI thread
+         * This method does not fail so it won't return an error
+         * Consider moving to Interactor or Helper to free the MainActivity?
+         */
+        Kii.initialize(
+                Constants.APP_ID,  // Put your App ID
+                Constants.APP_KEY, // Put your App Key
+                Kii.Site.US            // Put your site as you've specified upon creating the app on the dev portal
+        );
 
-        mPasswordView = (EditText) findViewById(R.id.password);
-        mPasswordView.setOnEditorActionListener(new TextView.OnEditorActionListener() {
-            @Override
-            public boolean onEditorAction(TextView textView, int id, KeyEvent keyEvent) {
-                if (id == R.id.login || id == EditorInfo.IME_NULL) {
-                    attemptLogin();
-                    return true;
-                }
-                return false;
-            }
-        });
+        // Set up the auth form.
+        mUsernameView = (EditText) findViewById(R.id.username);
+        mPasswordView = (EditText) findViewById(R.id.passw);
+        mRememberCheckbox = (CheckBox) findViewById(R.id.rememberBox);
 
-        Button mEmailSignInButton = (Button) findViewById(R.id.email_sign_in_button);
-        mEmailSignInButton.setOnClickListener(new OnClickListener() {
+        Button mSignInButton = (Button) findViewById(R.id.sign_in_button);
+        Button mRegisterButton = (Button) findViewById(R.id.register_button);
+
+        mSignInButton.setOnClickListener(new OnClickListener() {
             @Override
             public void onClick(View view) {
-                attemptLogin();
+                attemptAuth(false);
+            }
+        });
+        mRegisterButton.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                attemptAuth(true);
+            }
+        });
+        mRememberCheckbox.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                rememberMe = ((CheckBox) v).isChecked();
             }
         });
 
-        mLoginFormView = findViewById(R.id.login_form);
-        mProgressView = findViewById(R.id.login_progress);
+        mAuthFormView = findViewById(R.id.auth_form);
+        mProgressView = findViewById(R.id.progressBar);
 
-        // Configures the Kii SDK to use the specified Application ID and Key.
-        // It must be called prior to any API calls.
-        // It is ok to call this method multiple times
-        //TODO Kii.initialize(getApplicationContext(), "___APPID___", "___APPKEY___", Kii.Site.US);
+        // Now that the UI is set up we try to login via previous user access token
+        tryLoginWithToken();
     }
 
-    private void populateAutoComplete() {
-        getLoaderManager().initLoader(0, null, this);
+    // Login with existing token
+    // Consider converting to Interactor since this callback talks to the server and can succeed or fail
+    private void tryLoginWithToken() {
+        Log.d(TAG, "Trying to retrieve access token...");
+        String token = Preferences.getStoredAccessToken(this);
+        if (token == null || token.length() == 0) {
+            Log.d(TAG, "Found no access token");
+        } else {
+            Log.d(TAG, "Token: " + token);
+            showProgress(true);
+            mTokenSignInTask = new UserTokenSignInTask(this, token);
+            mTokenSignInTask.execute((Void) null);
+        }
     }
-
 
     /**
      * Attempts to sign in or register the account specified by the login form.
      * If there are form errors (invalid email, missing fields, etc.), the
      * errors are presented and no actual login attempt is made.
      */
-    public void attemptLogin() {
-        if (mAuthTask != null) {
-            return;
+    public void attemptAuth(boolean isRegistration) {
+        if(!isRegistration) {
+            if (mSignInTask != null) {
+                return;
+            }
+        } else {
+            if (mRegisterTask != null) {
+                return;
+            }
         }
 
         // Reset errors.
-        mEmailView.setError(null);
+        mUsernameView.setError(null);
         mPasswordView.setError(null);
 
-        // Store values at the time of the login attempt.
-        String email = mEmailView.getText().toString();
+        // Store values at the time of the auth attempt.
+        String username = mUsernameView.getText().toString();
         String password = mPasswordView.getText().toString();
 
         boolean cancel = false;
         View focusView = null;
 
+
         // Check for a valid password, if the user entered one.
-        if (!TextUtils.isEmpty(password) && !isPasswordValid(password)) {
+        if (TextUtils.isEmpty(password) || password.length() < 4) {
             mPasswordView.setError(getString(R.string.error_invalid_password));
             focusView = mPasswordView;
             cancel = true;
-        }
-
-        // Check for a valid email address.
-        if (TextUtils.isEmpty(email)) {
-            mEmailView.setError(getString(R.string.error_field_required));
-            focusView = mEmailView;
-            cancel = true;
-        } else if (!isEmailValid(email)) {
-            mEmailView.setError(getString(R.string.error_invalid_email));
-            focusView = mEmailView;
-            cancel = true;
-        }
+        } else
 
         if (cancel) {
             // There was an error; don't attempt login and focus the first
@@ -145,19 +156,15 @@ public class LoginActivity extends Activity implements LoaderCallbacks<Cursor> {
             // Show a progress spinner, and kick off a background task to
             // perform the user login attempt.
             showProgress(true);
-            mAuthTask = new UserLoginTask(email, password);
-            mAuthTask.execute((Void) null);
+            if(!isRegistration) {
+                mSignInTask = new UserSignInTask(getApplicationContext(), username, password, rememberMe);
+                mSignInTask.execute((Void) null);
+            }
+            else {
+                mRegisterTask = new UserRegistrationTask(this, username, password, rememberMe);
+                mRegisterTask.execute((Void) null);
+            }
         }
-    }
-
-    private boolean isEmailValid(String email) {
-        //TODO: Replace this with your own logic
-        return email.contains("@");
-    }
-
-    private boolean isPasswordValid(String password) {
-        //TODO: Replace this with your own logic
-        return password.length() > 4;
     }
 
     /**
@@ -170,16 +177,14 @@ public class LoginActivity extends Activity implements LoaderCallbacks<Cursor> {
         // the progress spinner.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.HONEYCOMB_MR2) {
             int shortAnimTime = getResources().getInteger(android.R.integer.config_shortAnimTime);
-
-            mLoginFormView.setVisibility(show ? View.GONE : View.VISIBLE);
-            mLoginFormView.animate().setDuration(shortAnimTime).alpha(
+            mAuthFormView.setVisibility(show ? View.GONE : View.VISIBLE);
+            mAuthFormView.animate().setDuration(shortAnimTime).alpha(
                     show ? 0 : 1).setListener(new AnimatorListenerAdapter() {
                 @Override
                 public void onAnimationEnd(Animator animation) {
-                    mLoginFormView.setVisibility(show ? View.GONE : View.VISIBLE);
+                    mAuthFormView.setVisibility(show ? View.GONE : View.VISIBLE);
                 }
             });
-
             mProgressView.setVisibility(show ? View.VISIBLE : View.GONE);
             mProgressView.animate().setDuration(shortAnimTime).alpha(
                     show ? 1 : 0).setListener(new AnimatorListenerAdapter() {
@@ -192,107 +197,56 @@ public class LoginActivity extends Activity implements LoaderCallbacks<Cursor> {
             // The ViewPropertyAnimator APIs are not available, so simply show
             // and hide the relevant UI components.
             mProgressView.setVisibility(show ? View.VISIBLE : View.GONE);
-            mLoginFormView.setVisibility(show ? View.GONE : View.VISIBLE);
+            mAuthFormView.setVisibility(show ? View.GONE : View.VISIBLE);
         }
-    }
-
-    @Override
-    public Loader<Cursor> onCreateLoader(int i, Bundle bundle) {
-        return new CursorLoader(this,
-                // Retrieve data rows for the device user's 'profile' contact.
-                Uri.withAppendedPath(ContactsContract.Profile.CONTENT_URI,
-                        ContactsContract.Contacts.Data.CONTENT_DIRECTORY), ProfileQuery.PROJECTION,
-
-                // Select only email addresses.
-                ContactsContract.Contacts.Data.MIMETYPE +
-                        " = ?", new String[]{ContactsContract.CommonDataKinds.Email
-                .CONTENT_ITEM_TYPE},
-
-                // Show primary email addresses first. Note that there won't be
-                // a primary email address if the user hasn't specified one.
-                ContactsContract.Contacts.Data.IS_PRIMARY + " DESC");
-    }
-
-    @Override
-    public void onLoadFinished(Loader<Cursor> cursorLoader, Cursor cursor) {
-        List<String> emails = new ArrayList<String>();
-        cursor.moveToFirst();
-        while (!cursor.isAfterLast()) {
-            emails.add(cursor.getString(ProfileQuery.ADDRESS));
-            cursor.moveToNext();
-        }
-
-        addEmailsToAutoComplete(emails);
-    }
-
-    @Override
-    public void onLoaderReset(Loader<Cursor> cursorLoader) {
-
-    }
-
-    private interface ProfileQuery {
-        String[] PROJECTION = {
-                ContactsContract.CommonDataKinds.Email.ADDRESS,
-                ContactsContract.CommonDataKinds.Email.IS_PRIMARY,
-        };
-
-        int ADDRESS = 0;
-        int IS_PRIMARY = 1;
-    }
-
-
-    private void addEmailsToAutoComplete(List<String> emailAddressCollection) {
-        //Create adapter to tell the AutoCompleteTextView what to show in its dropdown list.
-        ArrayAdapter<String> adapter =
-                new ArrayAdapter<String>(LoginActivity.this,
-                        android.R.layout.simple_dropdown_item_1line, emailAddressCollection);
-
-        mEmailView.setAdapter(adapter);
     }
 
     /**
-     * Represents an asynchronous login/registration task used to authenticate
+     * Represents an asynchronous login task used to authenticate
      * the user.
      */
-    public class UserLoginTask extends AsyncTask<Void, Void, Boolean> {
+    public class UserSignInTask extends AsyncTask<Void, Void, Boolean> {
 
-        private final String mEmail;
+        private final Context mContext;
+        private final String mUsername;
         private final String mPassword;
+        private final boolean mRememberMe;
 
-        UserLoginTask(String email, String password) {
-            mEmail = email;
+        UserSignInTask(Context context, String username, String password, boolean rememberMe) {
+            mContext = context;
+            mUsername = username;
             mPassword = password;
+            mRememberMe = rememberMe;
         }
 
         @Override
         protected Boolean doInBackground(Void... params) {
-            // TODO: attempt authentication against a network service.
-
+            // attempt sign in against Kii Cloud
             try {
-                // Simulate network access.
-                Thread.sleep(2000);
-            } catch (InterruptedException e) {
+                //String id = Settings.id(mContext);
+                Log.d(TAG, "Attempting sign in with username: " + mUsername);
+                KiiUser.logIn(mUsername, mPassword);
+                if(mRememberMe) {
+                    Log.d(TAG, "Storing access token...");
+                    KiiUser user = KiiUser.getCurrentUser();
+                    String token = user.getAccessToken();
+                    Preferences.setStoredAccessToken(mContext, token);
+                }
+            } catch (Exception e) {
                 return false;
             }
-
-            for (String credential : DUMMY_CREDENTIALS) {
-                String[] pieces = credential.split(":");
-                if (pieces[0].equals(mEmail)) {
-                    // Account exists, return true if the password matches.
-                    return pieces[1].equals(mPassword);
-                }
-            }
-
-            // TODO: register the new account here.
+            Log.d(TAG, "Sign in successful");
             return true;
         }
 
         @Override
         protected void onPostExecute(final Boolean success) {
-            mAuthTask = null;
+            mSignInTask = null;
             showProgress(false);
 
             if (success) {
+                Intent intent = new Intent(mContext, MainActivity.class);
+                startActivity(intent);
                 finish();
             } else {
                 mPasswordView.setError(getString(R.string.error_incorrect_password));
@@ -302,9 +256,123 @@ public class LoginActivity extends Activity implements LoaderCallbacks<Cursor> {
 
         @Override
         protected void onCancelled() {
-            mAuthTask = null;
+            mSignInTask = null;
+            showProgress(false);
+        }
+    }
+
+    /**
+     * Represents an asynchronous login task used to authenticate
+     * the user via an access token.
+     */
+    public class UserTokenSignInTask extends AsyncTask<Void, Void, Boolean> {
+
+        private final Context mContext;
+        private final String mToken;
+
+        UserTokenSignInTask(Context context, String token) {
+            mContext = context;
+            mToken = token;
+        }
+
+        @Override
+        protected Boolean doInBackground(Void... params) {
+            // attempt sign in against Kii Cloud using an access token
+            try {
+                Log.d(TAG, "Attempting sign in with access token");
+                KiiUser.loginWithToken(mToken);
+                Log.d(TAG, "Access token saved");
+            } catch (Exception e) {
+                Log.e(TAG, "Error storing access token: " + e.getMessage());
+                Preferences.clearStoredAccessToken(mContext);
+                Log.e(TAG, e.toString());
+                return false;
+            }
+            Log.d(TAG, "Sign in successful. User id: " + KiiUser.getCurrentUser().getUsername());
+            return true;
+        }
+
+        @Override
+        protected void onPostExecute(final Boolean success) {
+            mTokenSignInTask = null;
+            showProgress(false);
+            if (success) {
+                Intent intent = new Intent(mContext, MainActivity.class);
+                startActivity(intent);
+                finish();
+            } else {
+                Log.e(TAG, "Error signing in with token");
+            }
+        }
+
+        @Override
+        protected void onCancelled() {
+            mTokenSignInTask = null;
+            showProgress(false);
+        }
+    }
+
+    /**
+     * Represents an asynchronous registration task used to authenticate
+     * the user.
+     */
+    public class UserRegistrationTask extends AsyncTask<Void, Void, Boolean> {
+
+        private final Context mContext;
+        private final String mUsername;
+        private final String mPassword;
+        private final boolean mRememberMe;
+
+        UserRegistrationTask(Context context, String username, String password, boolean rememberMe) {
+            mContext = context;
+            mUsername = username;
+            mPassword = password;
+            mRememberMe = rememberMe;
+        }
+
+        @Override
+        protected Boolean doInBackground(Void... params) {
+            // attempt registration against Kii Cloud
+            try {
+                Log.d(TAG, "Attempting registration with username: " + mUsername);
+                KiiUser.Builder builder = KiiUser.builderWithName(mUsername);
+                KiiUser user = builder.build();
+                user.register(mPassword);
+                if(mRememberMe) {
+                    Log.d(TAG, "Storing access token...");
+                    KiiUser user2 = KiiUser.getCurrentUser();
+                    String token = user2.getAccessToken();
+                    Preferences.setStoredAccessToken(mContext, token);
+                    Log.d(TAG, "Access token saved");
+                }
+            }
+            catch (Exception e) {
+                Log.e(TAG, "Error storing access token: " + e.getMessage());
+                return false;
+            }
+            Log.d(TAG, "Registration successful");
+            return true;
+        }
+
+        @Override
+        protected void onPostExecute(final Boolean success) {
+            mRegisterTask = null;
+            showProgress(false);
+
+            if (success) {
+                Intent intent = new Intent(mContext, MainActivity.class);
+                startActivity(intent);
+                finish();
+            } else {
+                mPasswordView.setError(getString(R.string.error_incorrect_password));
+                mPasswordView.requestFocus();
+            }
+        }
+
+        @Override
+        protected void onCancelled() {
+            mRegisterTask = null;
             showProgress(false);
         }
     }
 }
-
