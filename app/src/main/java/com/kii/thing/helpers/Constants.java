@@ -9,4 +9,5 @@ public class Constants {
     public static final String APP_KEY = "851995d3247d81d5fd771b8752adddb1";
     public static final Kii.Site APP_SITE = Kii.Site.US;
     public static final String API_ENDPOINT = "https://api.kii.com/api";
+    public static final String THING_TOKEN = "o2onZE5HyX4zZViPpYY1j5_s689O-HvVkli2cLWMMtw";
 }

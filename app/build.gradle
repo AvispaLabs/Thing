@@ -21,7 +21,7 @@ android {
 
 dependencies {
     compile fileTree(dir: 'libs', include: ['*.jar'])
-    compile 'com.kii.library:android-cloud-sdk-v2.1.34@aar'
+    compile 'com.kii.library:android-cloud-sdk-v2.1.34b@aar'
     compile 'com.android.support:appcompat-v7:22.2.0'
     compile 'com.google.android.gms:play-services:7.5.0'
     compile 'com.squareup.okhttp:okhttp:2.3.0'
