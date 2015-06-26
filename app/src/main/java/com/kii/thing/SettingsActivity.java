@@ -15,10 +15,24 @@ import android.preference.PreferenceCategory;
 import android.preference.PreferenceFragment;
 import android.preference.PreferenceManager;
 import android.preference.RingtonePreference;
+import android.support.annotation.LayoutRes;
+import android.support.annotation.Nullable;
 import android.text.TextUtils;
+import android.util.Log;
+import android.view.MenuInflater;
 import android.view.MenuItem;
 import android.support.v4.app.NavUtils;
+import android.support.v7.app.ActionBar;
+import android.support.v7.app.AppCompatDelegate;
+import android.support.v7.widget.Toolbar;
+import android.view.View;
+import android.view.ViewGroup;
+import android.widget.Toast;
 
+import com.kii.cloud.storage.KiiCallback;
+import com.kii.cloud.storage.KiiThing;
+import com.kii.cloud.storage.KiiThingOwner;
+import com.kii.cloud.storage.KiiUser;
 import com.kii.thing.R;
 
 import java.util.List;
@@ -42,11 +56,17 @@ public class SettingsActivity extends PreferenceActivity {
      * shown on tablets.
      */
     private static final boolean ALWAYS_SIMPLE_PREFS = false;
+    private static final String TAG = "SettingsActivity";
+
+    private AppCompatDelegate mDelegate;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        getDelegate().installViewFactory();
+        getDelegate().onCreate(savedInstanceState);
         super.onCreate(savedInstanceState);
         setupActionBar();
+        grabThingOwnership("thingid_772");
     }
 
     /**
@@ -56,7 +76,7 @@ public class SettingsActivity extends PreferenceActivity {
     private void setupActionBar() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.HONEYCOMB) {
             // Show the Up button in the action bar.
-            //getActionBar().setDisplayHomeAsUpEnabled(true);
+            getSupportActionBar().setDisplayHomeAsUpEnabled(true);
         }
     }
 
@@ -82,8 +102,82 @@ public class SettingsActivity extends PreferenceActivity {
     @Override
     protected void onPostCreate(Bundle savedInstanceState) {
         super.onPostCreate(savedInstanceState);
-
+        getDelegate().onPostCreate(savedInstanceState);
         setupSimplePreferencesScreen();
+    }
+
+    public ActionBar getSupportActionBar() {
+        return getDelegate().getSupportActionBar();
+    }
+
+    public void setSupportActionBar(@Nullable Toolbar toolbar) {
+        getDelegate().setSupportActionBar(toolbar);
+    }
+
+    @Override
+    public MenuInflater getMenuInflater() {
+        return getDelegate().getMenuInflater();
+    }
+
+    @Override
+    public void setContentView(@LayoutRes int layoutResID) {
+        getDelegate().setContentView(layoutResID);
+    }
+
+    @Override
+    public void setContentView(View view) {
+        getDelegate().setContentView(view);
+    }
+
+    @Override
+    public void setContentView(View view, ViewGroup.LayoutParams params) {
+        getDelegate().setContentView(view, params);
+    }
+
+    @Override
+    public void addContentView(View view, ViewGroup.LayoutParams params) {
+        getDelegate().addContentView(view, params);
+    }
+
+    @Override
+    protected void onPostResume() {
+        super.onPostResume();
+        getDelegate().onPostResume();
+    }
+
+    @Override
+    protected void onTitleChanged(CharSequence title, int color) {
+        super.onTitleChanged(title, color);
+        getDelegate().setTitle(title);
+    }
+
+    @Override
+    public void onConfigurationChanged(Configuration newConfig) {
+        super.onConfigurationChanged(newConfig);
+        getDelegate().onConfigurationChanged(newConfig);
+    }
+
+    @Override
+    protected void onStop() {
+        super.onStop();
+        getDelegate().onStop();
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        getDelegate().onDestroy();
+    }
+
+    public void invalidateOptionsMenu() {
+        getDelegate().invalidateOptionsMenu();
+    }
+
+    private AppCompatDelegate getDelegate() {
+        if (mDelegate == null) {
+            mDelegate = AppCompatDelegate.create(this, null);
+        }
+        return mDelegate;
     }
 
     /**
@@ -294,4 +388,55 @@ public class SettingsActivity extends PreferenceActivity {
             bindPreferenceSummaryToValue(findPreference("sync_frequency"));
         }
     }
+
+    private void grabThingOwnership(String vendorThingId) {
+        // Assume user is logged in
+        final KiiUser user = KiiUser.getCurrentUser();
+        if(user == null)
+            return;
+        KiiThing.loadWithVendorThingID(vendorThingId, new KiiCallback<KiiThing>() {
+            @Override
+            public void onComplete(final KiiThing result, Exception e) {
+                if (e != null) {
+                    // Error handling
+                    Toast.makeText(getApplicationContext(), "Thing retrieval error",
+                            Toast.LENGTH_LONG).show();
+                    Log.e(TAG, e.toString());
+                    return;
+                }
+                result.isOwner(user, new KiiCallback<Boolean>() {
+                    @Override
+                    public void onComplete(Boolean isOwner, Exception e) {
+                        if (e != null) {
+                            Toast.makeText(getApplicationContext(), "Thing ownership retrieval error",
+                                    Toast.LENGTH_LONG).show();
+                            Log.e(TAG, e.toString());
+                            return;
+                        }
+                        if (!isOwner) {
+                            // Current user is not owner of thing
+                            result.registerOwner(user, new KiiCallback<KiiThingOwner>() {
+                                @Override
+                                public void onComplete(KiiThingOwner result, Exception e) {
+                                    if (e != null) {
+                                        // Error handling
+                                        Toast.makeText(getApplicationContext(), "Thing owner registration error",
+                                                Toast.LENGTH_LONG).show();
+                                        Log.e(TAG, e.toString());
+                                        return;
+                                    } else {
+                                        Toast.makeText(getApplicationContext(), "User registered as Thing owner",
+                                                Toast.LENGTH_LONG).show();
+                                        Log.i(TAG, "User registered as Thing owner");
+                                    }
+                                }
+                            });
+                        }
+                    }
+                });
+            }
+        });
+
+    }
+
 }

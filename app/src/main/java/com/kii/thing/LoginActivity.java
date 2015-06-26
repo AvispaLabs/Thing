@@ -61,7 +61,7 @@ public class LoginActivity extends Activity {
         Kii.initialize(
                 Constants.APP_ID,  // Put your App ID
                 Constants.APP_KEY, // Put your App Key
-                Kii.Site.US            // Put your site as you've specified upon creating the app on the dev portal
+                Constants.APP_SITE // Put your site as you've specified upon creating the app on the dev portal
         );
 
         // Set up the auth form.
