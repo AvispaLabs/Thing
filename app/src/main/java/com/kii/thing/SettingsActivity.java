@@ -67,7 +67,6 @@ public class SettingsActivity extends PreferenceActivity {
         getDelegate().onCreate(savedInstanceState);
         super.onCreate(savedInstanceState);
         setupActionBar();
-        grabThingOwnership("thingid_772");
     }
 
     /**
@@ -388,74 +387,6 @@ public class SettingsActivity extends PreferenceActivity {
             // guidelines.
             bindPreferenceSummaryToValue(findPreference("sync_frequency"));
         }
-    }
-
-    private void grabThingOwnership(String vendorThingId) {
-        // Assume user is logged in
-        final KiiUser user = KiiUser.getCurrentUser();
-        if(user == null)
-            return;
-        KiiThing.loadWithVendorThingID(vendorThingId, Constants.THING_TOKEN, new KiiCallback<KiiThing>() {
-            @Override
-            public void onComplete(final KiiThing result, Exception e) {
-                if (e != null) {
-                    // Error handling
-                    Toast.makeText(getApplicationContext(), "Thing retrieval error",
-                            Toast.LENGTH_LONG).show();
-                    Log.e(TAG, e.toString());
-                    return;
-                }
-                result.isOwner(user, Constants.THING_TOKEN, new KiiCallback<Boolean>() {
-                    @Override
-                    public void onComplete(Boolean isOwner, Exception e) {
-                        if (e != null) {
-                            Toast.makeText(getApplicationContext(), "Thing ownership retrieval error",
-                                    Toast.LENGTH_LONG).show();
-                            Log.e(TAG, e.toString());
-                            return;
-                        }
-                        if (!isOwner) {
-                            // Current user is not owner of thing, let's transfer ownership to the user
-                            result.registerOwner(user, user.getAccessToken(), new KiiCallback<KiiThingOwner>() {
-                                @Override
-                                public void onComplete(KiiThingOwner result, Exception e) {
-                                    if (e != null) {
-                                        // Error handling
-                                        Toast.makeText(getApplicationContext(), "Thing owner registration error",
-                                                Toast.LENGTH_LONG).show();
-                                        Log.e(TAG, e.toString());
-                                        return;
-                                    } else {
-                                        Toast.makeText(getApplicationContext(), "User registered as Thing owner",
-                                                Toast.LENGTH_LONG).show();
-                                        Log.i(TAG, "User registered as Thing owner");
-                                    }
-                                }
-                            });
-                        } else {
-                            // Current user is owner of thing, let's remove ownership from the user
-                            result.unregisterOwner(user, user.getAccessToken(), new KiiCallback<KiiThingOwner>() {
-                                @Override
-                                public void onComplete(KiiThingOwner result, Exception e) {
-                                    if (e != null) {
-                                        // Error handling
-                                        Toast.makeText(getApplicationContext(), "Thing owner unregistration error",
-                                                Toast.LENGTH_LONG).show();
-                                        Log.e(TAG, e.toString());
-                                        return;
-                                    } else {
-                                        Toast.makeText(getApplicationContext(), "User unregistered as Thing owner",
-                                                Toast.LENGTH_LONG).show();
-                                        Log.i(TAG, "User unregistered as Thing owner");
-                                    }
-                                }
-                            });
-                        }
-                    }
-                });
-            }
-        });
-
     }
 
 }

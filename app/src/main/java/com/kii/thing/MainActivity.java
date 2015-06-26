@@ -23,8 +23,14 @@ import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.TextView;
+import android.widget.Toast;
 
+import com.google.zxing.integration.android.IntentIntegrator;
+import com.google.zxing.integration.android.IntentResult;
 import com.kii.cloud.storage.Kii;
+import com.kii.cloud.storage.KiiCallback;
+import com.kii.cloud.storage.KiiThing;
+import com.kii.cloud.storage.KiiThingOwner;
 import com.kii.cloud.storage.KiiUser;
 import com.kii.thing.helpers.Preferences;
 
@@ -207,5 +213,112 @@ public class MainActivity extends ActionBarActivity {
             return rootView;
         }
     }
+
+    public void scanQr(View view){
+        IntentIntegrator integrator = new IntentIntegrator(this);
+        integrator.setDesiredBarcodeFormats(IntentIntegrator.QR_CODE_TYPES);
+        //integrator.setPrompt(String.valueOf(R.string.txt_scan_qr_code));
+        integrator.setResultDisplayDuration(0);
+        integrator.setCameraId(0);  // Use a specific camera of the device
+        integrator.initiateScan();
+    }
+
+    public void onActivityResult(int requestCode, int resultCode, Intent intent) {
+        //retrieve scan result
+        IntentResult scanningResult = IntentIntegrator.parseActivityResult(requestCode, resultCode, intent);
+
+        if (scanningResult != null) {
+            //we have a result
+            String scanContent = scanningResult.getContents();
+            String scanFormat = scanningResult.getFormatName();
+
+            // display it on screen
+            //formatTxt.setText("FORMAT: " + scanFormat);
+            //contentTxt.setText("CONTENT: " + scanContent);
+
+            // Parse thing id and token from QR
+            String[] splitted = scanContent.split(",");
+            String thingId = splitted[0];
+            String thingToken = splitted[1];
+
+            grabThingOwnership(thingId, thingToken);
+        } else {
+            Toast toast = Toast.makeText(getApplicationContext(), "No scan data received!", Toast.LENGTH_LONG);
+            toast.show();
+        }
+    }
+
+    private void grabThingOwnership(String thingId, final String thingToken) {
+        // Assume user is logged in
+        final KiiUser user = KiiUser.getCurrentUser();
+        if(user == null) {
+            Toast.makeText(getApplicationContext(), "Not logged in!",
+                    Toast.LENGTH_LONG).show();
+            Log.e(TAG, "Not logged in!");
+            return;
+        }
+        KiiThing.loadWithThingID(thingId, thingToken, new KiiCallback<KiiThing>() {
+            @Override
+            public void onComplete(final KiiThing result, Exception e) {
+                if (e != null) {
+                    // Error handling
+                    Toast.makeText(getApplicationContext(), "Thing retrieval error",
+                            Toast.LENGTH_LONG).show();
+                    Log.e(TAG, e.toString());
+                    return;
+                }
+                result.isOwner(user, thingToken, new KiiCallback<Boolean>() {
+                    @Override
+                    public void onComplete(Boolean isOwner, Exception e) {
+                        if (e != null) {
+                            Toast.makeText(getApplicationContext(), "Thing ownership retrieval error",
+                                    Toast.LENGTH_LONG).show();
+                            Log.e(TAG, e.toString());
+                            return;
+                        }
+                        if (!isOwner) {
+                            // Current user is not owner of thing, let's transfer ownership to the user
+                            result.registerOwner(user, user.getAccessToken(), new KiiCallback<KiiThingOwner>() {
+                                @Override
+                                public void onComplete(KiiThingOwner result, Exception e) {
+                                    if (e != null) {
+                                        // Error handling
+                                        Toast.makeText(getApplicationContext(), "Thing owner registration error",
+                                                Toast.LENGTH_LONG).show();
+                                        Log.e(TAG, e.toString());
+                                        return;
+                                    } else {
+                                        Toast.makeText(getApplicationContext(), "User registered as Thing owner",
+                                                Toast.LENGTH_LONG).show();
+                                        Log.i(TAG, "User registered as Thing owner");
+                                    }
+                                }
+                            });
+                        } else {
+                            // Current user is owner of thing, let's remove ownership from the user
+                            result.unregisterOwner(user, user.getAccessToken(), new KiiCallback<KiiThingOwner>() {
+                                @Override
+                                public void onComplete(KiiThingOwner result, Exception e) {
+                                    if (e != null) {
+                                        // Error handling
+                                        Toast.makeText(getApplicationContext(), "Thing owner unregistration error",
+                                                Toast.LENGTH_LONG).show();
+                                        Log.e(TAG, e.toString());
+                                        return;
+                                    } else {
+                                        Toast.makeText(getApplicationContext(), "User unregistered as Thing owner",
+                                                Toast.LENGTH_LONG).show();
+                                        Log.i(TAG, "User unregistered as Thing owner");
+                                    }
+                                }
+                            });
+                        }
+                    }
+                });
+            }
+        });
+
+    }
+
 
 }
