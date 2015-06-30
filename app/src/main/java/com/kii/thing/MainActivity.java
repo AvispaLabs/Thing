@@ -1,37 +1,37 @@
 package com.kii.thing;
 
-import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Locale;
 
 import android.content.Intent;
+import android.os.AsyncTask;
 import android.support.v7.app.ActionBarActivity;
-import android.support.v7.app.ActionBar;
 import android.support.v4.app.Fragment;
 import android.support.v4.app.FragmentManager;
-import android.support.v4.app.FragmentTransaction;
 import android.support.v4.app.FragmentPagerAdapter;
 import android.os.Bundle;
 import android.support.v4.view.ViewPager;
 import android.util.Log;
-import android.view.Gravity;
 import android.view.LayoutInflater;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.TextView;
 import android.widget.Toast;
 
+import com.google.android.gms.gcm.GoogleCloudMessaging;
 import com.google.zxing.integration.android.IntentIntegrator;
 import com.google.zxing.integration.android.IntentResult;
-import com.kii.cloud.storage.Kii;
+import com.kii.cloud.storage.KiiBucket;
 import com.kii.cloud.storage.KiiCallback;
 import com.kii.cloud.storage.KiiThing;
 import com.kii.cloud.storage.KiiThingOwner;
 import com.kii.cloud.storage.KiiUser;
+import com.kii.cloud.storage.callback.KiiPushCallBack;
+import com.kii.thing.helpers.Constants;
+import com.kii.thing.helpers.GCMPreference;
 import com.kii.thing.helpers.Preferences;
 
 import org.json.JSONArray;
@@ -41,6 +41,8 @@ import org.json.JSONObject;
 public class MainActivity extends ActionBarActivity {
 
     private static final String TAG = "MainActivity";
+    private GoogleCloudMessaging gcm;
+    public static MainActivity mainActivity = null;
 
     /**
      * The {@link android.support.v4.view.PagerAdapter} that will provide
@@ -71,8 +73,49 @@ public class MainActivity extends ActionBarActivity {
         mViewPager = (ViewPager) findViewById(R.id.pager);
         mViewPager.setAdapter(mSectionsPagerAdapter);
 
+        registerGCM();
+
     }
 
+    @Override
+    protected void onResume() {
+        super.onResume();
+        mainActivity = this;
+    }
+    @Override
+    protected void onPause() {
+        super.onPause();
+        mainActivity = null;
+    }
+
+    private void registerGCM() {
+        // GCM setup
+        final GoogleCloudMessaging gcm = GoogleCloudMessaging.getInstance(getApplicationContext());
+        String regId = GCMPreference.getRegistrationId(getApplicationContext());
+        if (regId.isEmpty()) {
+            Log.d(TAG, "Previous GCM Reg Id not found");
+            new AsyncTask<Void, Void, String>() {
+                @Override
+                protected String doInBackground(Void... params) {
+                    try {
+                        Log.d(TAG, "Registering GCM...");
+                        // call register
+                        String regId = gcm.register(Constants.GCM_PROJECT_NUMBER);
+                        // install user device (assumes user is already logged in)
+                        KiiUser.pushInstallation().install(regId);
+                        // if all succeeded, save registration ID to preference.
+                        GCMPreference.setRegistrationId(MainActivity.this.getApplicationContext(), regId);
+                        Log.d(TAG, "Registered GCM");
+                        return regId;
+                    } catch (Exception e) {
+                        Log.e(TAG, "Error registering GCM push: " +  e.toString());
+                        return null;
+                    }
+                }
+            }.execute();
+        } else
+            Log.d(TAG, "Previous GCM Reg Id found, no need to register");
+    }
 
     @Override
     public boolean onCreateOptionsMenu(Menu menu) {
@@ -280,7 +323,7 @@ public class MainActivity extends ActionBarActivity {
                             // Current user is not owner of thing, let's transfer ownership to the user
                             result.registerOwner(user, user.getAccessToken(), new KiiCallback<KiiThingOwner>() {
                                 @Override
-                                public void onComplete(KiiThingOwner result, Exception e) {
+                                public void onComplete(KiiThingOwner result2, Exception e) {
                                     if (e != null) {
                                         // Error handling
                                         Toast.makeText(getApplicationContext(), "Thing owner registration error",
@@ -291,6 +334,22 @@ public class MainActivity extends ActionBarActivity {
                                         Toast.makeText(getApplicationContext(), "User registered as Thing owner",
                                                 Toast.LENGTH_LONG).show();
                                         Log.i(TAG, "User registered as Thing owner");
+                                        // Subscribing push o bucket
+                                        KiiBucket thingBucket = result.bucket(Constants.THING_BUCKET);
+                                        user.pushSubscription().subscribe(thingBucket, new KiiPushCallBack() {
+                                            @Override
+                                            public void onInstallCompleted(int taskId, Exception e) {
+                                                if (e != null) {
+                                                    Toast.makeText(getApplicationContext(), "Push subscription error",
+                                                            Toast.LENGTH_LONG).show();
+                                                    Log.e(TAG, e.toString());
+                                                    return;
+                                                }
+                                                Toast.makeText(getApplicationContext(), "Push subscription success",
+                                                        Toast.LENGTH_LONG).show();
+                                                Log.d(TAG, e.toString());
+                                            }
+                                        });
                                     }
                                 }
                             });
@@ -298,10 +357,10 @@ public class MainActivity extends ActionBarActivity {
                             // Current user is owner of thing, let's remove ownership from the user
                             result.unregisterOwner(user, user.getAccessToken(), new KiiCallback<KiiThingOwner>() {
                                 @Override
-                                public void onComplete(KiiThingOwner result, Exception e) {
+                                public void onComplete(KiiThingOwner result3, Exception e) {
                                     if (e != null) {
                                         // Error handling
-                                        Toast.makeText(getApplicationContext(), "Thing owner unregistration error",
+                                        Toast.makeText(getApplicationContext(), "Thing owner unregister error",
                                                 Toast.LENGTH_LONG).show();
                                         Log.e(TAG, e.toString());
                                         return;
@@ -309,6 +368,22 @@ public class MainActivity extends ActionBarActivity {
                                         Toast.makeText(getApplicationContext(), "User unregistered as Thing owner",
                                                 Toast.LENGTH_LONG).show();
                                         Log.i(TAG, "User unregistered as Thing owner");
+                                        // Unsubscribing push o bucket
+                                        KiiBucket thingBucket = result.bucket(Constants.THING_BUCKET);
+                                        user.pushSubscription().unsubscribe(thingBucket, new KiiPushCallBack() {
+                                            @Override
+                                            public void onInstallCompleted(int taskId, Exception e) {
+                                                if (e != null) {
+                                                    Toast.makeText(getApplicationContext(), "Push unsubscribe error",
+                                                            Toast.LENGTH_LONG).show();
+                                                    Log.e(TAG, e.toString());
+                                                    return;
+                                                }
+                                                Toast.makeText(getApplicationContext(), "Push unsubscribe success",
+                                                        Toast.LENGTH_LONG).show();
+                                                Log.d(TAG, e.toString());
+                                            }
+                                        });
                                     }
                                 }
                             });
