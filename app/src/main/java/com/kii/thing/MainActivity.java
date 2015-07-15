@@ -1,33 +1,48 @@
 package com.kii.thing;
 
-import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Locale;
 
+import android.content.Intent;
+import android.os.AsyncTask;
 import android.support.v7.app.ActionBarActivity;
-import android.support.v7.app.ActionBar;
 import android.support.v4.app.Fragment;
 import android.support.v4.app.FragmentManager;
-import android.support.v4.app.FragmentTransaction;
 import android.support.v4.app.FragmentPagerAdapter;
 import android.os.Bundle;
 import android.support.v4.view.ViewPager;
 import android.util.Log;
-import android.view.Gravity;
 import android.view.LayoutInflater;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.TextView;
+import android.widget.Toast;
+
+import com.google.android.gms.gcm.GoogleCloudMessaging;
+import com.google.zxing.integration.android.IntentIntegrator;
+import com.google.zxing.integration.android.IntentResult;
+import com.kii.cloud.storage.KiiBucket;
+import com.kii.cloud.storage.KiiCallback;
+import com.kii.cloud.storage.KiiThing;
+import com.kii.cloud.storage.KiiThingOwner;
+import com.kii.cloud.storage.KiiUser;
+import com.kii.cloud.storage.callback.KiiPushCallBack;
+import com.kii.thing.helpers.Constants;
+import com.kii.thing.helpers.GCMPreference;
+import com.kii.thing.helpers.Preferences;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
 
 
 public class MainActivity extends ActionBarActivity {
+
+    private static final String TAG = "MainActivity";
+    private GoogleCloudMessaging gcm;
+    public static MainActivity mainActivity = null;
 
     /**
      * The {@link android.support.v4.view.PagerAdapter} that will provide
@@ -58,8 +73,49 @@ public class MainActivity extends ActionBarActivity {
         mViewPager = (ViewPager) findViewById(R.id.pager);
         mViewPager.setAdapter(mSectionsPagerAdapter);
 
+        registerGCM();
+
     }
 
+    @Override
+    protected void onResume() {
+        super.onResume();
+        mainActivity = this;
+    }
+    @Override
+    protected void onPause() {
+        super.onPause();
+        mainActivity = null;
+    }
+
+    private void registerGCM() {
+        // GCM setup
+        final GoogleCloudMessaging gcm = GoogleCloudMessaging.getInstance(getApplicationContext());
+        String regId = GCMPreference.getRegistrationId(getApplicationContext());
+        if (regId.isEmpty()) {
+            Log.d(TAG, "Previous GCM Reg Id not found");
+            new AsyncTask<Void, Void, String>() {
+                @Override
+                protected String doInBackground(Void... params) {
+                    try {
+                        Log.d(TAG, "Registering GCM...");
+                        // call register
+                        String regId = gcm.register(Constants.GCM_PROJECT_NUMBER);
+                        // install user device (assumes user is already logged in)
+                        KiiUser.pushInstallation().install(regId);
+                        // if all succeeded, save registration ID to preference.
+                        GCMPreference.setRegistrationId(MainActivity.this.getApplicationContext(), regId);
+                        Log.d(TAG, "Registered GCM");
+                        return regId;
+                    } catch (Exception e) {
+                        Log.e(TAG, "Error registering GCM push: " +  e.toString());
+                        return null;
+                    }
+                }
+            }.execute();
+        } else
+            Log.d(TAG, "Previous GCM Reg Id found, no need to register");
+    }
 
     @Override
     public boolean onCreateOptionsMenu(Menu menu) {
@@ -77,6 +133,17 @@ public class MainActivity extends ActionBarActivity {
 
         //noinspection SimplifiableIfStatement
         if (id == R.id.action_settings) {
+            Intent intent = new Intent(this, SettingsActivity.class);
+            this.startActivity(intent);
+            return true;
+        }
+
+        if (id == R.id.action_logout) {
+            if(KiiUser.getCurrentUser() != null) {
+                KiiUser.logOut();
+                Preferences.clearStoredAccessToken(this);
+            }
+            finish();
             return true;
         }
 
@@ -189,5 +256,144 @@ public class MainActivity extends ActionBarActivity {
             return rootView;
         }
     }
+
+    public void scanQr(View view){
+        IntentIntegrator integrator = new IntentIntegrator(this);
+        integrator.setDesiredBarcodeFormats(IntentIntegrator.QR_CODE_TYPES);
+        //integrator.setPrompt(String.valueOf(R.string.txt_scan_qr_code));
+        integrator.setResultDisplayDuration(0);
+        integrator.setCameraId(0);  // Use a specific camera of the device
+        integrator.initiateScan();
+    }
+
+    public void onActivityResult(int requestCode, int resultCode, Intent intent) {
+        //retrieve scan result
+        IntentResult scanningResult = IntentIntegrator.parseActivityResult(requestCode, resultCode, intent);
+
+        if (scanningResult != null) {
+            //we have a result
+            String scanContent = scanningResult.getContents();
+            String scanFormat = scanningResult.getFormatName();
+
+            // display it on screen
+            //formatTxt.setText("FORMAT: " + scanFormat);
+            //contentTxt.setText("CONTENT: " + scanContent);
+
+            // Parse thing id and token from QR
+            String[] splitted = scanContent.split(",");
+            String thingId = splitted[0];
+            String thingToken = splitted[1];
+
+            grabThingOwnership(thingId, thingToken);
+        } else {
+            Toast toast = Toast.makeText(getApplicationContext(), "No scan data received!", Toast.LENGTH_LONG);
+            toast.show();
+        }
+    }
+
+    private void grabThingOwnership(String thingId, final String thingToken) {
+        // Assume user is logged in
+        final KiiUser user = KiiUser.getCurrentUser();
+        if(user == null) {
+            Toast.makeText(getApplicationContext(), "Not logged in!",
+                    Toast.LENGTH_LONG).show();
+            Log.e(TAG, "Not logged in!");
+            return;
+        }
+        KiiThing.loadWithThingID(thingId, thingToken, new KiiCallback<KiiThing>() {
+            @Override
+            public void onComplete(final KiiThing result, Exception e) {
+                if (e != null) {
+                    // Error handling
+                    Toast.makeText(getApplicationContext(), "Thing retrieval error",
+                            Toast.LENGTH_LONG).show();
+                    Log.e(TAG, e.toString());
+                    return;
+                }
+                result.isOwner(user, thingToken, new KiiCallback<Boolean>() {
+                    @Override
+                    public void onComplete(Boolean isOwner, Exception e) {
+                        if (e != null) {
+                            Toast.makeText(getApplicationContext(), "Thing ownership retrieval error",
+                                    Toast.LENGTH_LONG).show();
+                            Log.e(TAG, e.toString());
+                            return;
+                        }
+                        if (!isOwner) {
+                            // Current user is not owner of thing, let's transfer ownership to the user
+                            result.registerOwner(user, user.getAccessToken(), new KiiCallback<KiiThingOwner>() {
+                                @Override
+                                public void onComplete(KiiThingOwner result2, Exception e) {
+                                    if (e != null) {
+                                        // Error handling
+                                        Toast.makeText(getApplicationContext(), "Thing owner registration error",
+                                                Toast.LENGTH_LONG).show();
+                                        Log.e(TAG, e.toString());
+                                        return;
+                                    } else {
+                                        Toast.makeText(getApplicationContext(), "User registered as Thing owner",
+                                                Toast.LENGTH_LONG).show();
+                                        Log.i(TAG, "User registered as Thing owner");
+                                        // Subscribing push o bucket
+                                        KiiBucket thingBucket = result.bucket(Constants.THING_BUCKET);
+                                        user.pushSubscription().subscribe(thingBucket, new KiiPushCallBack() {
+                                            @Override
+                                            public void onInstallCompleted(int taskId, Exception e) {
+                                                if (e != null) {
+                                                    Toast.makeText(getApplicationContext(), "Push subscription error",
+                                                            Toast.LENGTH_LONG).show();
+                                                    Log.e(TAG, e.toString());
+                                                    return;
+                                                }
+                                                Toast.makeText(getApplicationContext(), "Push subscription success",
+                                                        Toast.LENGTH_LONG).show();
+                                                Log.d(TAG, e.toString());
+                                            }
+                                        });
+                                    }
+                                }
+                            });
+                        } else {
+                            // Current user is owner of thing, let's remove ownership from the user
+                            result.unregisterOwner(user, user.getAccessToken(), new KiiCallback<KiiThingOwner>() {
+                                @Override
+                                public void onComplete(KiiThingOwner result3, Exception e) {
+                                    if (e != null) {
+                                        // Error handling
+                                        Toast.makeText(getApplicationContext(), "Thing owner unregister error",
+                                                Toast.LENGTH_LONG).show();
+                                        Log.e(TAG, e.toString());
+                                        return;
+                                    } else {
+                                        Toast.makeText(getApplicationContext(), "User unregistered as Thing owner",
+                                                Toast.LENGTH_LONG).show();
+                                        Log.i(TAG, "User unregistered as Thing owner");
+                                        // Unsubscribing push o bucket
+                                        KiiBucket thingBucket = result.bucket(Constants.THING_BUCKET);
+                                        user.pushSubscription().unsubscribe(thingBucket, new KiiPushCallBack() {
+                                            @Override
+                                            public void onInstallCompleted(int taskId, Exception e) {
+                                                if (e != null) {
+                                                    Toast.makeText(getApplicationContext(), "Push unsubscribe error",
+                                                            Toast.LENGTH_LONG).show();
+                                                    Log.e(TAG, e.toString());
+                                                    return;
+                                                }
+                                                Toast.makeText(getApplicationContext(), "Push unsubscribe success",
+                                                        Toast.LENGTH_LONG).show();
+                                                Log.d(TAG, e.toString());
+                                            }
+                                        });
+                                    }
+                                }
+                            });
+                        }
+                    }
+                });
+            }
+        });
+
+    }
+
 
 }
