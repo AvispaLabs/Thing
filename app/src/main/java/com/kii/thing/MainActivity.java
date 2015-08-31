@@ -5,7 +5,9 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Locale;
 
+import android.content.Context;
 import android.content.Intent;
+import android.graphics.Color;
 import android.os.AsyncTask;
 import android.support.v7.app.ActionBarActivity;
 import android.support.v4.app.Fragment;
@@ -13,14 +15,21 @@ import android.support.v4.app.FragmentManager;
 import android.support.v4.app.FragmentPagerAdapter;
 import android.os.Bundle;
 import android.support.v4.view.ViewPager;
+import android.text.Layout;
 import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.RelativeLayout;
 import android.widget.Toast;
 
+import com.github.mikephil.charting.charts.LineChart;
+import com.github.mikephil.charting.components.Legend;
+import com.github.mikephil.charting.components.XAxis;
+import com.github.mikephil.charting.components.YAxis;
+import com.github.mikephil.charting.data.LineData;
 import com.google.android.gms.gcm.GoogleCloudMessaging;
 import com.google.zxing.integration.android.IntentIntegrator;
 import com.google.zxing.integration.android.IntentResult;
@@ -43,6 +52,8 @@ public class MainActivity extends ActionBarActivity {
     private static final String TAG = "MainActivity";
     private GoogleCloudMessaging gcm;
     public static MainActivity mainActivity = null;
+    private RelativeLayout mainLayout;
+    private LineChart mChart;
 
     /**
      * The {@link android.support.v4.view.PagerAdapter} that will provide
@@ -64,7 +75,6 @@ public class MainActivity extends ActionBarActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
-
         // Create the adapter that will return a fragment for each of the three
         // primary sections of the activity.
         mSectionsPagerAdapter = new SectionsPagerAdapter(getSupportFragmentManager());
@@ -75,6 +85,36 @@ public class MainActivity extends ActionBarActivity {
 
         registerGCM();
 
+    }
+
+    private LineChart getChart(RelativeLayout layout, Context context){
+        LineChart lineChart = new LineChart(context);
+        layout.addView(lineChart);
+        lineChart.setDescription("");
+        lineChart.setNoDataTextDescription("No data");
+        lineChart.setHighlightEnabled(true);
+        lineChart.setTouchEnabled(true);
+        lineChart.setDragEnabled(true);
+        lineChart.setDrawGridBackground(false);
+        lineChart.setPinchZoom(true);
+        lineChart.setBackgroundColor(Color.LTGRAY);
+        LineData data = new LineData();
+        data.setValueTextColor(Color.WHITE);
+        lineChart.setData(data);
+        Legend l = lineChart.getLegend();
+        l.setForm(Legend.LegendForm.LINE);
+        l.setTextColor(Color.WHITE);
+        XAxis xl = lineChart.getXAxis();
+        xl.setTextColor(Color.WHITE);
+        xl.setDrawGridLines(false);
+        xl.setAvoidFirstLastClipping(true);
+        YAxis yl = lineChart.getAxisLeft();
+        yl.setTextColor(Color.WHITE);
+        yl.setAxisMaxValue(120f);
+        yl.setDrawGridLines(true);
+        YAxis yl2 = lineChart.getAxisRight();
+        yl2.setEnabled(false);
+        return lineChart;
     }
 
     @Override
@@ -149,42 +189,6 @@ public class MainActivity extends ActionBarActivity {
 
         return super.onOptionsItemSelected(item);
     }
-
-    public String loadJSONFromAsset(String filename) throws java.io.IOException {
-        String json = null;
-        InputStream is = getAssets().open(filename);
-        int size = is.available();
-        byte[] buffer = new byte[size];
-        is.read(buffer);
-        is.close();
-        json = new String(buffer, "UTF-8");
-        return json;
-    }
-
-    public void processJSON() throws Exception {
-        JSONObject obj = new JSONObject(loadJSONFromAsset("DEVICE.JSN"));
-        JSONArray m_jArry = obj.getJSONArray("formules");
-        ArrayList<HashMap<String, String>> formList= new ArrayList<HashMap<String, String>>();
-        HashMap<String, String> m_li;
-
-        for (int i = 0; i < m_jArry.length(); i++)
-        {
-            JSONObject jo_inside = m_jArry.getJSONObject(i);
-            Log.d("Details-->", jo_inside.getString("formule"));
-            String formula_value = jo_inside.getString("formule");
-            String url_value = jo_inside.getString("url");
-
-            //Add your values in your `ArrayList` as below:
-
-            m_li=new HashMap<String, String>();
-            m_li.put("formule", formula_value );
-            m_li.put("url", url_value );
-
-            formList.add(m_li);
-            //Same way for other value...
-        }
-    }
-
 
     /**
      * A {@link FragmentPagerAdapter} that returns a fragment corresponding to
@@ -392,7 +396,6 @@ public class MainActivity extends ActionBarActivity {
                 });
             }
         });
-
     }
 
 
