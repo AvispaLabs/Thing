@@ -9,7 +9,6 @@ import android.widget.TextView;
 
 import com.kii.thing.MainActivity;
 import com.kii.thing.R;
-import com.kii.thing.helpers.Constants;
 import com.google.android.gms.gcm.GoogleCloudMessaging;
 import com.kii.cloud.storage.*;
 import com.kii.cloud.storage.callback.KiiObjectCallBack;
@@ -47,13 +46,14 @@ public class KiiPushBroadcastReceiver extends BroadcastReceiver {
                                 @Override
                                 public void onRefreshCompleted(int token, KiiObject object, Exception exception) {
                                     if (exception != null) {
-                                        Log.e(TAG, "Could not refresh object from PushToApp");
+                                        Log.e(TAG, "Could not refresh object from PushToApp: " + exception.toString());
                                         return;
                                     }
                                     String temperature = object.getString(Constants.THING_TEMP_FIELD);
                                     Log.d(TAG, "Received temperature: " + temperature);
-                                    if (MainActivity.mainActivity != null) {
-                                        ((TextView)MainActivity.mainActivity.findViewById(R.id.textViewTemperature)).setText(temperature + " °C");
+                                    if (MainActivity.instance != null) {
+                                        float temp = Float.valueOf(temperature);
+                                        MainActivity.instance.addChartEntry(temp);
                                     }
                                 }
                             });

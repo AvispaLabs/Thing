@@ -16,7 +16,7 @@ import android.view.View.OnClickListener;
 import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.EditText;
-import com.kii.thing.R;
+
 import com.kii.thing.helpers.Constants;
 import com.kii.thing.helpers.Preferences;
 import com.kii.cloud.storage.Kii;
@@ -281,14 +281,14 @@ public class LoginActivity extends Activity {
             try {
                 Log.d(TAG, "Attempting sign in with access token");
                 KiiUser.loginWithToken(mToken);
-                Log.d(TAG, "Access token saved");
+                Log.d(TAG, "Sign in with token successful");
             } catch (Exception e) {
-                Log.e(TAG, "Error storing access token: " + e.getMessage());
-                Preferences.clearStoredAccessToken(mContext);
+                Log.e(TAG, "Error signing in with token: " + e.getMessage());
+                //Preferences.clearStoredAccessToken(mContext);
                 Log.e(TAG, e.toString());
                 return false;
             }
-            Log.d(TAG, "Sign in successful. User id: " + KiiUser.getCurrentUser().getUsername());
+            Log.d(TAG, "User id: " + KiiUser.getCurrentUser().getUsername());
             return true;
         }
 
