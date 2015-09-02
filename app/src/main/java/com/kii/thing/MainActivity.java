@@ -1,6 +1,7 @@
 package com.kii.thing;
 
 import android.content.Intent;
+import android.content.pm.ActivityInfo;
 import android.graphics.Color;
 import android.os.AsyncTask;
 import android.support.v7.app.ActionBarActivity;
@@ -43,6 +44,7 @@ public class MainActivity extends ActionBarActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
+        setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
         instance = this;
         mChart = (LineChart) findViewById(R.id.chart);
         setupChart(mChart);
@@ -231,7 +233,7 @@ public class MainActivity extends ActionBarActivity {
         //retrieve scan result
         IntentResult scanningResult = IntentIntegrator.parseActivityResult(requestCode, resultCode, intent);
 
-        if (scanningResult != null) {
+        if (scanningResult != null && scanningResult.getContents() != null) {
             //we have a result
             String scanContent = scanningResult.getContents();
             String scanFormat = scanningResult.getFormatName();
