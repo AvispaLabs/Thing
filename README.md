@@ -1,2 +1,2 @@
 # Thing
-A general purpose Kii connected IoT device based on Android
+An Android client for https://github.com/AvispaLabs/thing_demo_macosx
